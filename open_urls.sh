@@ -3,26 +3,33 @@
 FILE="urls.txt"
 
 while IFS= read -r line || [ -n "$line" ]; do
-    # 忽略空行或註解
     [[ -z "$line" || "$line" =~ ^# ]] && continue
 
-    # 拆分分鐘與網址
     minute=$(echo "$line" | awk '{print $1}')
     url=$(echo "$line" | awk '{print $2}')
     seconds=$((minute * 60))
 
-    echo "🔗 開啟網址：$url（$minute 分鐘）"
+    echo ""
+    echo "🔗 開啟網址："
+    echo $url
+    echo "$minute 分鐘"
 
-    # 使用 Brave 的獨立視窗（app 模式）開啟網址
+    # 開啟 Brave（app 模式可選）
     /Applications/Brave\ Browser.app/Contents/MacOS/Brave\ Browser --new --app="$url" &
 
-    # 等待指定時間
     sleep "$seconds"
 
-    echo "⏱️ 時間到，關閉 Brave 視窗"
+    echo "⏱️ 關閉所有 Brave..."
 
-    # 關閉最早開啟的 Brave 視窗（就是剛剛那個）
-    pkill -o "Brave Browser"
+    # 使用 AppleScript 關掉整個 Brave Browser
+    osascript <<EOF
+    tell application "Brave Browser"
+        if it is running then
+            quit
+        end if
+    end tell
+EOF
 
-    sleep 5  # 避免重疊
+    sleep 3
 done < "$FILE"
+
