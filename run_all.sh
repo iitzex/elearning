@@ -61,10 +61,15 @@ if [ -f "$SCRIPT_DIR/urls.txt" ]; then
                     sleep 1
                     wait_seconds=$((wait_seconds - 1))
                 done
-                echo -e "\n時間到！準備進入下一個課程。"
+                echo -e "\n時間到！"
             else
-                echo "此課程剩餘時間為 0，直接進入下一個。"
-                sleep 2
+                echo "此課程剩餘時間為 0。"
+            fi
+            
+            # 在課程間插入 1 分鐘等待 (如果還有下一個課程)
+            if [ $current_count -lt $total_courses ]; then
+                echo "等待 1 分鐘再開啟下一個課程，以避免操作過於頻繁..."
+                sleep 60
             fi
         fi
     done < "$SCRIPT_DIR/urls.txt"
