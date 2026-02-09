@@ -45,16 +45,16 @@ while true; do
         total_courses=$(wc -l < "$SCRIPT_DIR/urls.txt")
         current_count=0
         recheck_needed=false
-        RELOAD_INTERVAL=30  # 設定每 30 分鐘重新載入一次
+        RELOAD_INTERVAL=90  # 設定每 90 分鐘重新載入一次 (配合完成條件)
         
         while read -r line; do
             current_count=$((current_count + 1))
-            min=$(echo "$line" | awk '{print $1}')
-            url=$(echo "$line" | awk '{print $2}')
+            IFS='|' read -r min url course_name <<< "$line"
             
             if [[ "$url" == http* ]]; then
                 echo "------------------------------------------------------------"
                 echo "正在處理第 $current_count/$total_courses 個課程"
+                echo "課程名稱: $course_name"
                 echo "剩餘所需時間: $min 分鐘"
                 
                 # 為了確保瀏覽器真的會重新載入，我們在網址後加上時間戳記
