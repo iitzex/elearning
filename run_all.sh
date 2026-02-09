@@ -3,7 +3,19 @@
 # 設定腳本路徑（取得此腳本所在的絕對路徑）
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# 清理瀏覽器的函數
+cleanup_browser() {
+    echo "正在清理既有瀏覽器分頁 (Brave/Chrome/Safari)..."
+    osascript -e 'if application "Brave Browser" is running then tell application "Brave Browser" to close windows' 2>/dev/null
+    osascript -e 'if application "Google Chrome" is running then tell application "Google Chrome" to close windows' 2>/dev/null
+    osascript -e 'if application "Safari" is running then tell application "Safari" to close windows' 2>/dev/null
+    sleep 2
+}
+
 while true; do
+    # 每次重新開始流程時都先清理一次瀏覽器
+    cleanup_browser
+
     echo "============================================================"
     echo "開始執行自動上課檢查流程 (時間: $(date))"
     echo "============================================================"
@@ -56,6 +68,9 @@ while true; do
                 echo "網址: $url"
                 echo "------------------------------------------------------------"
                 
+                # 在開啟新頁面前，先關閉現有的瀏覽器頁面，確保只有一個課程在執行
+                cleanup_browser
+                
                 open "$url_to_open"
                 
                 # 設定本次等待時間，最多為 RELOAD_INTERVAL 分鐘
@@ -80,6 +95,7 @@ while true; do
                         wait_seconds=$((wait_seconds - 1))
                     done
                     echo -e "\n時間到！"
+                    cleanup_browser
                 else
                     echo "此課程剩餘時間為 0。"
                 fi
@@ -87,13 +103,8 @@ while true; do
                 if [ "$limit_reached" = true ]; then
                     echo "已達到 $RELOAD_INTERVAL 分鐘等待上限，將重新執行檢查並重新載入頁面..."
                     recheck_needed=true
+                    cleanup_browser
                     break
-                fi
-
-                # 在課程間插入 1 分鐘等待 (如果還有下一個課程)
-                if [ $current_count -lt $total_courses ]; then
-                    echo "等待 1 分鐘再開啟下一個課程，以避免操作過於頻繁..."
-                    sleep 60
                 fi
             fi
         done < "$SCRIPT_DIR/urls.txt"

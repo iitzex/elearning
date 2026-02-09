@@ -4,6 +4,11 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    import ddddocr
+except ImportError:
+    ddddocr = None
+
 
 def extract_course_info_from_html(html_content):
     """從 HTML 內容提取課程名稱、連結和完成狀態"""
@@ -98,12 +103,23 @@ def login_and_get_session(username, password):
         with open("captcha.png", "wb") as f:
             f.write(captcha_resp.content)
 
-        # 3. 開啟驗證碼圖片
-        import subprocess
-        subprocess.run(["open", "captcha.png"])
+        # 4. 嘗試自動辨識驗證碼
+        captcha_code = ""
+        if ddddocr:
+            try:
+                print("[資訊] 正在自動辨識驗證碼...")
+                ocr = ddddocr.DdddOcr(show_ad=False)
+                captcha_code = ocr.classification(captcha_resp.content)
+                print(f"[成功] 自動辨識結果: {captcha_code}")
+            except Exception as ocr_err:
+                print(f"[警告] OCR 辨識失敗: {ocr_err}")
 
-        # 4. 停下等待用戶輸入
-        captcha_code = input("\n[等待輸入] 請查看開啟的 captcha.png 並在此輸入驗證碼: ")
+        # 5. 如果辨識失敗或沒安裝 OCR，停下等待用戶輸入
+        if not captcha_code:
+            # 開啟驗證碼圖片
+            import subprocess
+            subprocess.run(["open", "captcha.png"])
+            captcha_code = input("\n[等待輸入] 請查看開啟的 captcha.png 並在此輸入驗證碼: ")
 
         # 準備登入資料
         payload = {
