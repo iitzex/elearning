@@ -90,7 +90,7 @@ def main():
     results = []
     for block in blocks:
         result = parse_course_block(block)
-        if result:
+        if result and result.remaining_min > 0:
             results.append(result)
 
     write_results(results, Files.URLS_TXT)

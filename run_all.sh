@@ -50,10 +50,10 @@ while true; do
     echo ""
     echo "步驟 3: 自動依序上課 (開啟網頁 -> 等待倒數 -> 重新檢查)"
     if [ -f "$SCRIPT_DIR/urls.txt" ] && [ -s "$SCRIPT_DIR/urls.txt" ]; then
-        # [新增] 將課程清單隨機排序，使用目前時間作為種子
-        echo "[資訊] 正在隨機選擇課程 (使用時間戳記作為種子)..."
-        # 這裡我們隨機排序整份清單，並在處理完一個課程後就重新進入外層迴圈檢查，達成「每次開的頁面都隨機」
-        python3 -c "import random, time, sys; random.seed(time.time()); lines = sys.stdin.readlines(); random.shuffle(lines); sys.stdout.write(''.join(lines))" < "$SCRIPT_DIR/urls.txt" > "$SCRIPT_DIR/urls_tmp.txt"
+        # [修改] 依據課程剩餘所需時間排序，由短至長優先上課
+        echo "[資訊] 正在依據剩餘時間排序課程 (最短優先)..."
+        # urls.txt 格式為 min|url|course_name，我們依據第一欄 (min) 進行數值排序
+        sort -t'|' -k1,1n "$SCRIPT_DIR/urls.txt" > "$SCRIPT_DIR/urls_tmp.txt"
         mv "$SCRIPT_DIR/urls_tmp.txt" "$SCRIPT_DIR/urls.txt"
 
         total_courses=$(wc -l < "$SCRIPT_DIR/urls.txt")
