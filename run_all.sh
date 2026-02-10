@@ -3,13 +3,15 @@
 # 設定腳本路徑（取得此腳本所在的絕對路徑）
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# 清理瀏覽器的函數
+# 清理瀏覽器的函數：強制結束所有瀏覽器程序，確保只有一個頁面被開啟
 cleanup_browser() {
-    echo "正在清理既有瀏覽器分頁 (Brave/Chrome/Safari)..."
-    osascript -e 'if application "Brave Browser" is running then tell application "Brave Browser" to close windows' 2>/dev/null
-    osascript -e 'if application "Google Chrome" is running then tell application "Google Chrome" to close windows' 2>/dev/null
-    osascript -e 'if application "Safari" is running then tell application "Safari" to close windows' 2>/dev/null
-    sleep 2
+    echo "[$(date +%H:%M:%S)] 正在強制清理既有瀏覽器程序，確保環境單純..."
+    # 使用 killall 強制結束程序，這是確保只有一個課堂頁面被開啟最可靠的方法
+    killall "Brave Browser" 2>/dev/null
+    killall "Google Chrome" 2>/dev/null
+    killall "Safari" 2>/dev/null
+    # 稍微多等一下讓系統釋放資源
+    sleep 3
 }
 
 while true; do
@@ -45,7 +47,7 @@ while true; do
         total_courses=$(wc -l < "$SCRIPT_DIR/urls.txt")
         current_count=0
         recheck_needed=false
-        RELOAD_INTERVAL=90  # 設定每 90 分鐘重新載入一次 (配合完成條件)
+        RELOAD_INTERVAL=30  # 設定每 30 分鐘重新載入一次 (避免平台工作逾時)
         
         while read -r line; do
             current_count=$((current_count + 1))
@@ -68,25 +70,26 @@ while true; do
                 echo "網址: $url"
                 echo "------------------------------------------------------------"
                 
-                # 在開啟新頁面前，先關閉現有的瀏覽器頁面，確保只有一個課程在執行
+                # 在開啟新頁面前，先確保清理完畢，達成「只開啟目前課堂頁面」
                 cleanup_browser
                 
-                open "$url_to_open"
+                # 使用 -F (fresh) 參數開啟，避免瀏覽器回復先前的分頁
+                open -F "$url_to_open"
                 
                 # 設定本次等待時間，最多為 RELOAD_INTERVAL 分鐘
                 wait_min=$min
                 limit_reached=false
-                if [ "$wait_min" -gt "$RELOAD_INTERVAL" ]; then
+                if [ "$wait_min" -ge "$RELOAD_INTERVAL" ]; then
                     wait_min=$RELOAD_INTERVAL
                     limit_reached=true
                 fi
 
                 if [ "$wait_min" -gt 0 ]; then
                     wait_seconds=$((wait_min * 60))
-                    echo "開始計時 $wait_min 分鐘 ($wait_seconds 秒)..."
+                    echo "[$(date +%H:%M:%S)] 開始計時 $wait_min 分鐘 ($wait_seconds 秒)..."
                     
                     if [ "$limit_reached" = true ]; then
-                        echo "提示: 此課程時間較長，將於 $RELOAD_INTERVAL 分鐘後重新載入頁面以確保進度更新。"
+                        echo "提示: 此課程時間較長，將於 $RELOAD_INTERVAL 分鐘後自動重新載入以更新進度。"
                     fi
                     
                     while [ $wait_seconds -gt 0 ]; do

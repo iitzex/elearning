@@ -445,11 +445,53 @@ if __name__ == "__main__":
         session.get(sso_url)
         response = session.get(course_list_url)
 
-    # Debug: 儲存 HTML 以便檢查結構
+    # 儲存 HTML 以便檢查結構
     with open(Files.DEBUG_COURSES, "w", encoding="utf-8") as f:
         f.write(response.text)
 
+    # 獲取總頁數
+    soup = BeautifulSoup(response.text, "html.parser")
+    total_pages = 1
+    pagination_links = soup.select(".pagination .paginate-page[data-page]")
+    if pagination_links:
+        pages = [int(link["data-page"])
+                 for link in pagination_links if link["data-page"].isdigit()]
+        if pages:
+            total_pages = max(pages)
+
+    print(f"[資訊] 偵測到總共有 {total_pages} 頁課程紀錄")
+
+    all_courses = []
+
+    # 第一頁已經拿到了，直接解析
     courses = extract_course_info_from_html(response.text)
+    all_courses.extend(courses)
+    print(f"[資訊] 第 1/{total_pages} 頁：找到 {len(courses)} 個課程")
+
+    # 獲取後續頁面
+    for page in range(2, total_pages + 1):
+        print(f"[資訊] 正在獲取第 {page}/{total_pages} 頁...")
+        # 準備 POST 參數
+        payload = {
+            "queryYear": "115",  # 依照 HTML 中的預設值
+            "mode": "0",        # 精簡模式
+            "cstatus": "0",     # 全部
+            "page": str(page),
+            "perPage": "10"     # 預設每頁 10 筆
+        }
+        # 注意：此處可能需要增加 CSRF token 或其他隱藏欄位，但通常這種分頁 POST 只需要 page
+        # 檢查 HTML 中是否有 sesskey
+        sesskey_match = re.search(
+            r'name="sesskey" value="([^"]+)"', response.text)
+        if sesskey_match:
+            payload["sesskey"] = sesskey_match.group(1)
+
+        response = session.post(course_list_url, data=payload)
+        courses = extract_course_info_from_html(response.text)
+        all_courses.extend(courses)
+        print(f"[資訊] 第 {page}/{total_pages} 頁：找到 {len(courses)} 個課程")
+
+    courses = all_courses
 
     if not courses:
         print(
