@@ -10,6 +10,12 @@ cleanup_browser() {
     killall "Brave Browser" 2>/dev/null
     killall "Google Chrome" 2>/dev/null
     killall "Safari" 2>/dev/null
+
+    # 刪除 session 紀錄，防止啟動時回復上次的分頁 (Chromium 核心適用)
+    # 這能解決「Brave 沒有正常關閉，是否要回復頁面」的小視窗問題
+    rm -rf "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/"*/Sessions/* 2>/dev/null
+    rm -rf "$HOME/Library/Application Support/Google/Chrome/"*/Sessions/* 2>/dev/null
+
     # 稍微多等一下讓系統釋放資源
     sleep 3
 }
@@ -44,6 +50,12 @@ while true; do
     echo ""
     echo "步驟 3: 自動依序上課 (開啟網頁 -> 等待倒數 -> 重新檢查)"
     if [ -f "$SCRIPT_DIR/urls.txt" ] && [ -s "$SCRIPT_DIR/urls.txt" ]; then
+        # [新增] 將課程清單隨機排序，使用目前時間作為種子
+        echo "[資訊] 正在隨機選擇課程 (使用時間戳記作為種子)..."
+        # 這裡我們隨機排序整份清單，並在處理完一個課程後就重新進入外層迴圈檢查，達成「每次開的頁面都隨機」
+        python3 -c "import random, time, sys; random.seed(time.time()); lines = sys.stdin.readlines(); random.shuffle(lines); sys.stdout.write(''.join(lines))" < "$SCRIPT_DIR/urls.txt" > "$SCRIPT_DIR/urls_tmp.txt"
+        mv "$SCRIPT_DIR/urls_tmp.txt" "$SCRIPT_DIR/urls.txt"
+
         total_courses=$(wc -l < "$SCRIPT_DIR/urls.txt")
         current_count=0
         recheck_needed=false
@@ -73,8 +85,12 @@ while true; do
                 # 在開啟新頁面前，先確保清理完畢，達成「只開啟目前課堂頁面」
                 cleanup_browser
                 
-                # 使用 -F (fresh) 參數開啟，避免瀏覽器回復先前的分頁
-                open -F "$url_to_open"
+                # 等待 5 秒後開啟網頁，確保環境已清理
+                echo "[$(date +%H:%M:%S)] 等待 5 秒後開啟網頁..."
+                sleep 5
+
+                # 使用具體參數開啟 Brave，加入 --hide-crash-restore-bubble 與 --restore-last-session=0 徹底防止回復舊分頁
+                open -a "Brave Browser" -F "$url_to_open" --args --new-window --restore-last-session=0 --hide-crash-restore-bubble
                 
                 # 設定本次等待時間，最多為 RELOAD_INTERVAL 分鐘
                 wait_min=$min
@@ -103,16 +119,16 @@ while true; do
                     echo "此課程剩餘時間為 0。"
                 fi
                 
-                if [ "$limit_reached" = true ]; then
-                    echo "已達到 $RELOAD_INTERVAL 分鐘等待上限，將重新執行檢查並重新載入頁面..."
-                    recheck_needed=true
-                    cleanup_browser
-                    break
-                fi
+                # 每次處理完一個課程（不論是完成或是達到 30 分鐘上限），都跳出內層迴圈
+                # 這樣外層迴圈 (while true) 會重新抓取最新課程狀態並再次隨機挑選
+                echo "[資訊] 課程頁面已關閉，準備進入下一波隨機挑選..."
+                recheck_needed=true
+                break
             fi
         done < "$SCRIPT_DIR/urls.txt"
         
         if [ "$recheck_needed" = true ]; then
+            sleep 3
             continue
         fi
         

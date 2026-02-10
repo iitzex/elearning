@@ -239,7 +239,7 @@ def check_course_completion(
 
         study_times = _extract_study_times(content)
         progress, is_completed = _extract_progress_info(soup, content)
-        scorm_link = _extract_scorm_link(soup, content)
+        scorm_link = _extract_scorm_link(soup, content, session)
 
         # 提取完成條件中的閱讀時間
         required_time_str = None
@@ -314,24 +314,111 @@ def _extract_progress_info(
     return progress, is_completed
 
 
-def _extract_scorm_link(soup: BeautifulSoup, content: str) -> Optional[str]:
+def _extract_scorm_link(soup: BeautifulSoup, content: str, session: Optional[requests.Session] = None) -> Optional[str]:
     """提取 SCORM 連結"""
+    scorm_link = None
+
     # 從連結中查找
-    scorm_pattern = "/elearn/mod/scorm/view.ph"
+    scorm_pattern = "/elearn/mod/scorm/view.php"
     links = soup.find_all("a", href=True)
     for link in links:
         href = link["href"]
         if scorm_pattern in href:
-            return URLs.AP2_BASE + href if href.startswith("/") else href
+            scorm_link = URLs.AP2_BASE + href if href.startswith("/") else href
+            break
 
-    # 從內容中查找
-    match = re.search(
-        r'https?://[^\s"\'<>]+/elearn/mod/scorm/view\.php\?id=\d+', content
-    )
-    if match:
-        return match.group(0)
+    if not scorm_link:
+        # 從內容中查找
+        match = re.search(
+            r'https?://[^\s"\'<>]+/elearn/mod/scorm/view\.php\?id=\d+', content
+        )
+        if match:
+            scorm_link = match.group(0)
 
-    return None
+    # [使用者要求] 當開啟「scorm」頁面時，再檢查一次目前的網頁是否有「進入」的按鈕
+    # 如果有，需要再開啟一次按鈕的連結網頁 (通常是進入課程的按鈕)
+    if scorm_link and session:
+        try:
+            print(f"   [資訊] 正在分析 SCORM 啟動路徑: {scorm_link}")
+            resp = session.get(scorm_link)
+            inner_soup = BeautifulSoup(resp.text, "html.parser")
+
+            # 策略 1: 尋找明確標記為「進入」或「Enter」的表單或按鈕
+            # 涵蓋 input[type=submit], button, a 標籤
+            search_text = re.compile(r"進入|Enter|開始|啟動|Launch", re.I)
+
+            # 優先找表單按鈕 (SCORM 最常見的做法)
+            found_action = None
+            found_params = {}
+
+            # 檢查所有按鈕元件
+            btn_elements = inner_soup.find_all(["input", "button", "a"])
+            for elem in btn_elements:
+                text = ""
+                if elem.name == "input":
+                    text = elem.get("value", "") or elem.get("title", "")
+                else:
+                    text = elem.get_text(strip=True) or elem.get("title", "")
+
+                if search_text.search(text):
+                    # 如果是 A 標籤，直接拿連結
+                    if elem.name == "a" and elem.get("href"):
+                        href = elem.get("href")
+                        if "mod/scorm/player.php" in href or "mod/scorm/loadScorm.php" in href:
+                            found_action = href
+                            break
+
+                    # 如果是按鈕，找父層 Form
+                    form = elem.find_parent("form")
+                    if form and form.get("action"):
+                        found_action = form.get("action")
+                        # 收集隱藏參數
+                        for inp in form.find_all("input"):
+                            name = inp.get("name")
+                            val = inp.get("value")
+                            if name:  # 即使 val 是 None 也保留 key，有些可以用預設值
+                                found_params[name] = val if val is not None else ""
+                        break
+
+            # 策略 2: 如果沒找到按鈕，但在頁面中發現指向 player.php 的連結
+            if not found_action:
+                player_link = inner_soup.find(
+                    "a", href=re.compile(r"mod/scorm/player\.php"))
+                if player_link:
+                    found_action = player_link["href"]
+
+            # 如果有找到任何深層連結
+            if found_action:
+                # 處理相對路徑
+                if found_action.startswith("/"):
+                    final_base = URLs.AP2_BASE + found_action
+                elif not found_action.startswith("http"):
+                    # 處理同目錄下的 player.php 這種情況
+                    base_dir = os.path.dirname(scorm_link)
+                    final_base = f"{base_dir}/{found_action}"
+                else:
+                    final_base = found_action
+
+                # 組合參數 (如果是從 Form 來的)
+                if found_params:
+                    # 如果 action 已經有問號，用 & 接，否則用 ?
+                    sep = "&" if "?" in final_base else "?"
+                    query_str = "&".join(
+                        [f"{k}={v}" for k, v in found_params.items() if v])
+                    final_link = f"{final_base}{sep}{query_str}" if query_str else final_base
+                else:
+                    final_link = final_base
+
+                # 確保不重複加 ?
+                final_link = final_link.replace("??", "?").replace("&&", "&")
+
+                print(f"   [發現深層連結] 偵測到啟動點，自動更新網址為: {final_link}")
+                return final_link
+
+        except Exception as e:
+            print(f"   [提示] 分析 SCORM 頁面時發生異常: {e}")
+
+    return scorm_link
 
 
 def save_cookies(session: requests.Session, filename: str = Files.COOKIES) -> None:
