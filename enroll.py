@@ -19,6 +19,15 @@ def get_enrolled_courses(session):
         print(f"   -> {history_resp.status_code} {history_resp.url}")
     print(f"   -> {sso_response.status_code} {sso_response.url}")
 
+    # 動態提取目前使用的 AP 網域
+    from urllib.parse import urlparse
+    parsed_url = urlparse(sso_response.url)
+    detected_base = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    print(f"[資訊] 偵測到目前網域: {detected_base}")
+    
+    # 更新後續使用的網址
+    course_list_url = f"{detected_base}/elearn/courserecord/index.php"
+
     # Helper function
     def is_course_list_page(text):
         return "課程完成與否" in text or "table__tbody" in text

@@ -522,14 +522,24 @@ if __name__ == "__main__":
     sso_url = "https://elearning.taipei/mpage/sso_moodle?redirectPage=courserecord"
     course_list_url = "https://ap1.elearning.taipei/elearn/courserecord/index.php"
 
-    # 強制執行 SSO 以確保 ap2 網域的 session 被初始化
+    # 強制執行 SSO 以確保 ap 網域的 session 被初始化
     print(f"[資訊] 存取 SSO: {sso_url}")
-    sso_response = session.get(sso_url)
+    sso_response = session.get(sso_url, allow_redirects=True)
     
     print("   [除錯] SSO Redirect History:")
     for history_resp in sso_response.history:
         print(f"   -> {history_resp.status_code} {history_resp.url}")
     print(f"   -> {sso_response.status_code} {sso_response.url}")
+
+    # 動態提取目前使用的 AP 網域
+    from urllib.parse import urlparse
+    parsed_url = urlparse(sso_response.url)
+    detected_base = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    print(f"[資訊] 偵測到目前網域: {detected_base}")
+    
+    # 更新通用的 AP2_BASE 與目前的 course_list_url
+    URLs.AP2_BASE = detected_base
+    course_list_url = f"{detected_base}/elearn/courserecord/index.php"
 
     # 判斷是否直接跳轉到了課程頁面
     is_valid_page = False
