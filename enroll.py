@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from get_course import load_config, load_cookies, is_session_valid, login_and_get_session
 import re
+import argparse
 import time
 
 
@@ -175,8 +176,8 @@ def search_and_enroll(session, enrolled_ids, current_hours, target_hours=120):
                 if hours_match:
                     hours = float(hours_match.group(1))
 
-            # **重點：跳過認證時數為 0 的課程**
-            if hours <= 0:
+            # **重點：跳過認證時數 <= 2 的課程**
+            if hours <= 2:
                 continue
 
             enroll_btn = block.find("button", class_="btn-black")
@@ -208,7 +209,7 @@ def search_and_enroll(session, enrolled_ids, current_hours, target_hours=120):
     return current_hours
 
 
-def save_courses_to_file(courses, total_hours, filename="course.txt"):
+def save_courses_to_file(courses, total_hours, filename="courses.txt"):
     """Save course list to file."""
     with open(filename, 'w', encoding='utf-8') as f:
         f.write("="*80 + "\n")
@@ -250,19 +251,24 @@ def main():
     print("檢查目前已報名課程...")
     enrolled_ids, courses_list, current_hours = get_enrolled_courses(session)
 
-    print(f"\n目前已報名: {len(courses_list)} 門課程")
-    print(f"目前總時數: {current_hours:.1f} 小時\n")
 
-    if current_hours >= 120:
-        print("✅ 已達到 120 小時目標！")
+
+    # 解析命令列參數
+    parser = argparse.ArgumentParser(description='Auto enroll courses to reach target hours.')
+    parser.add_argument('--target', type=float, default=120.0, help='Target hours to reach (default: 120)')
+    args = parser.parse_args()
+    target_enrolled_hours = args.target
+
+    if current_hours >= target_enrolled_hours:
+        print(f"✅ 已達到 {target_enrolled_hours} 小時目標！")
     else:
-        need_hours = 120 - current_hours
-        print(f"⚠️  還需要再報名 {need_hours:.1f} 小時的課程")
-        print("開始自動報名課程（只報名認證時數 > 0 的課程）...\n")
+        need_hours = target_enrolled_hours - current_hours
+        print(f"⚠️  還需要再報名 {need_hours:.1f} 小時的課程 (目標: {target_enrolled_hours} 小時)")
+        print("開始自動報名課程（只報名認證時數 > 2 的課程）...\n")
 
         # Enroll in more courses
         final_hours = search_and_enroll(
-            session, enrolled_ids, current_hours, target_hours=120)
+            session, enrolled_ids, current_hours, target_hours=target_enrolled_hours)
         print(f"\n報名完成！最終時數: {final_hours:.1f} 小時")
 
         # Refresh course list
@@ -272,13 +278,13 @@ def main():
             session)
 
     # Save to file
-    print(f"\n儲存課程列表到 course.txt...")
+    print(f"\n儲存課程列表到 courses.txt...")
     save_courses_to_file(courses_list, current_hours)
 
     print(f"\n✅ 完成！")
     print(f"已報名課程總時數: {current_hours:.1f} 小時")
     print(f"課程總數: {len(courses_list)}")
-    print(f"詳細清單已儲存至: course.txt")
+    print(f"詳細清單已儲存至: courses.txt")
 
 
 if __name__ == "__main__":
