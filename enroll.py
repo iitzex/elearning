@@ -8,9 +8,40 @@ import time
 
 def get_enrolled_courses(session):
     """Get all enrolled courses from ALL pages using robust pagination."""
-    # Use SSO redirect first
     sso_url = "https://elearning.taipei/mpage/sso_moodle?redirectPage=courserecord"
-    session.get(sso_url, allow_redirects=True)
+    course_list_url = "https://ap1.elearning.taipei/elearn/courserecord/index.php"
+
+    print(f"[資訊] 存取 SSO: {sso_url}")
+    sso_response = session.get(sso_url, allow_redirects=True)
+    
+    print("   [除錯] SSO Redirect History:")
+    for history_resp in sso_response.history:
+        print(f"   -> {history_resp.status_code} {history_resp.url}")
+    print(f"   -> {sso_response.status_code} {sso_response.url}")
+
+    # Helper function
+    def is_course_list_page(text):
+        return "課程完成與否" in text or "table__tbody" in text
+
+    # Check if SSO landed us on the correct page
+    initial_response = None
+    if is_course_list_page(sso_response.text):
+        print("[成功] SSO 直接跳轉至課程列表頁面!")
+        initial_response = sso_response
+    else:
+        print("[資訊] SSO 未直接跳轉至課程列表，嘗試手動存取...")
+        resp = session.get(course_list_url)
+        if is_course_list_page(resp.text):
+             print("[成功] 手動存取課程列表成功!")
+             initial_response = resp
+        else:
+             print("[資訊] 偵測到尚未進入學習紀錄頁面 (Validation Failed)，嘗試第二次 SSO 跳轉...")
+             sso_response = session.get(sso_url)
+             if is_course_list_page(sso_response.text):
+                 initial_response = sso_response
+             else:
+                 # Last resort
+                 initial_response = session.get(course_list_url)
 
     all_courses = []
     total_hours = 0.0
@@ -19,13 +50,19 @@ def get_enrolled_courses(session):
 
     while True:
         # Get course record page with pagination
-        if page == 1:
-            record_url = "https://ap2.elearning.taipei/elearn/courserecord/index.php"
+        if page == 1 and initial_response:
+            print(f"檢查已報名: 使用 SSO 獲取的第 1 頁...")
+            resp = initial_response
+            # Clear it so we don't reuse it if we somehow loop back to page 1 (unlikely but safe)
+            initial_response = None 
+        elif page == 1:
+             record_url = "https://ap1.elearning.taipei/elearn/courserecord/index.php"
+             print(f"檢查已報名: 讀取第 {page} 頁...")
+             resp = session.get(record_url)
         else:
-            record_url = f"https://ap2.elearning.taipei/elearn/courserecord/index.php?page={page}"
-
-        print(f"檢查已報名: 讀取第 {page} 頁...")
-        resp = session.get(record_url)
+            record_url = f"https://ap1.elearning.taipei/elearn/courserecord/index.php?page={page}"
+            print(f"檢查已報名: 讀取第 {page} 頁...")
+            resp = session.get(record_url)
 
         soup = BeautifulSoup(resp.text, "html.parser")
         table = soup.find("table", id="applySelection")
@@ -108,7 +145,7 @@ def get_enrolled_courses(session):
 
 def enroll_course(session, course_id):
     """Enroll in a course."""
-    enroll_url = f"https://ap2.elearning.taipei/elearn/course/view.php?id={course_id}&act=reg"
+    enroll_url = f"https://ap1.elearning.taipei/elearn/course/view.php?id={course_id}&act=reg"
     resp = session.get(enroll_url, allow_redirects=True)
     return resp.status_code == 200
 

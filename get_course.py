@@ -21,8 +21,8 @@ class URLs:
     CAPTCHA = "https://elearning.taipei/mpage/captcha"
     HOME = "https://elearning.taipei/mpage/"
     SSO = "https://elearning.taipei/mpage/sso_moodle?redirectPage=courserecord"
-    COURSE_LIST = "https://ap2.elearning.taipei/elearn/courserecord/index.php"
-    AP2_BASE = "https://ap2.elearning.taipei"
+    COURSE_LIST = "https://ap1.elearning.taipei/elearn/courserecord/index.php"
+    AP2_BASE = "https://ap1.elearning.taipei"
 
 
 @dataclass
@@ -520,17 +520,52 @@ if __name__ == "__main__":
     print("=" * 60)
 
     sso_url = "https://elearning.taipei/mpage/sso_moodle?redirectPage=courserecord"
-    course_list_url = "https://ap2.elearning.taipei/elearn/courserecord/index.php"
+    course_list_url = "https://ap1.elearning.taipei/elearn/courserecord/index.php"
 
     # 強制執行 SSO 以確保 ap2 網域的 session 被初始化
-    session.get(sso_url)
-    response = session.get(course_list_url)
+    print(f"[資訊] 存取 SSO: {sso_url}")
+    sso_response = session.get(sso_url)
+    
+    print("   [除錯] SSO Redirect History:")
+    for history_resp in sso_response.history:
+        print(f"   -> {history_resp.status_code} {history_resp.url}")
+    print(f"   -> {sso_response.status_code} {sso_response.url}")
 
-    # 檢查是否真的拿到了課程頁面 (檢查欄位名稱)
-    if "課程名稱" not in response.text and "認證時數" not in response.text:
-        print("[資訊] 偵測到尚未進入學習紀錄頁面，嘗試第二次 SSO 跳轉...")
-        session.get(sso_url)
+    # 判斷是否直接跳轉到了課程頁面
+    is_valid_page = False
+    
+    # helper 函數：驗證頁面是否正確
+    def is_course_list_page(text):
+        return "課程完成與否" in text or "table__tbody" in text
+
+    if is_course_list_page(sso_response.text):
+        print("[成功] SSO 直接跳轉至課程列表頁面!")
+        response = sso_response
+        is_valid_page = True
+    else:
+        print("[資訊] SSO 未直接跳轉至課程列表，嘗試手動存取...")
         response = session.get(course_list_url)
+        if is_course_list_page(response.text):
+             print("[成功] 手動存取課程列表成功!")
+             is_valid_page = True
+
+    # 檢查是否真的拿到了課程頁面 (檢查欄位名稱 - 嚴格檢查)
+    if not is_valid_page:
+        print("[資訊] 偵測到尚未進入學習紀錄頁面 (Validation Failed)，嘗試第二次 SSO 跳轉...")
+        
+        # 顯示當前頁面標題以供除錯
+        try:
+            debug_soup = BeautifulSoup(response.text, "html.parser")
+            print(f"   [除錯] 目前所在頁面標題: {debug_soup.title.string.strip() if debug_soup.title else 'No Title'}")
+        except:
+            pass
+
+        # 重試邏輯
+        sso_response = session.get(sso_url)
+        if is_course_list_page(sso_response.text):
+             response = sso_response
+        else:
+             response = session.get(course_list_url)
 
     # 儲存 HTML 以便檢查結構
     with open(Files.DEBUG_COURSES, "w", encoding="utf-8") as f:
