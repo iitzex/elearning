@@ -1,5 +1,4 @@
-49 https://ap2.elearning.taipei/elearn/mod/scorm/view.php?id=15689
-90 https://ap2.elearning.taipei/elearn/mod/scorm/view.php?id=15676
-90 https://ap2.elearning.taipei/elearn/mod/scorm/view.php?id=17298
-90 https://ap2.elearning.taipei/elearn/mod/scorm/view.php?id=18270
-90 https://ap2.elearning.taipei/elearn/mod/scorm/view.php?id=18169
+30|https://ap2.elearning.taipei/elearn/mod/scorm/player.php?scoid=98407&cm=18720&currentorg=ORG-6263F45746C05A89A389A07F26F05CBC&lang=zh_tw|職業災害勞工保護及重返職場服務－權益認識篇-臺北市勞動力重建運用處提供
+90|https://ap2.elearning.taipei/elearn/mod/scorm/player.php?scoid=97346&cm=18162&currentorg=org_01218tc3&lang=zh_tw|超Easy專案管理4堂課：1.規劃篇-即時動態排程管理
+90|https://ap2.elearning.taipei/elearn/mod/scorm/player.php?scoid=97453&cm=18168&currentorg=ORG-FCF174186DCB90F0EAD0C37621034678&lang=zh_tw|人工智慧與機器學習
+90|https://ap2.elearning.taipei/elearn/mod/scorm/player.php?scoid=97480&cm=18171&currentorg=ORG-FCF174186DCB90F0EAD0C37621034678&lang=zh_tw|[環境教育]如何從日常生活落實淨零新生活

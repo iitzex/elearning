@@ -13,7 +13,7 @@ def get_enrolled_courses(session):
 
     print(f"[資訊] 存取 SSO: {sso_url}")
     sso_response = session.get(sso_url, allow_redirects=True)
-    
+
     print("   [除錯] SSO Redirect History:")
     for history_resp in sso_response.history:
         print(f"   -> {history_resp.status_code} {history_resp.url}")
@@ -24,7 +24,7 @@ def get_enrolled_courses(session):
     parsed_url = urlparse(sso_response.url)
     detected_base = f"{parsed_url.scheme}://{parsed_url.netloc}"
     print(f"[資訊] 偵測到目前網域: {detected_base}")
-    
+
     # 更新後續使用的網址
     course_list_url = f"{detected_base}/elearn/courserecord/index.php"
 
@@ -41,16 +41,16 @@ def get_enrolled_courses(session):
         print("[資訊] SSO 未直接跳轉至課程列表，嘗試手動存取...")
         resp = session.get(course_list_url)
         if is_course_list_page(resp.text):
-             print("[成功] 手動存取課程列表成功!")
-             initial_response = resp
+            print("[成功] 手動存取課程列表成功!")
+            initial_response = resp
         else:
-             print("[資訊] 偵測到尚未進入學習紀錄頁面 (Validation Failed)，嘗試第二次 SSO 跳轉...")
-             sso_response = session.get(sso_url)
-             if is_course_list_page(sso_response.text):
-                 initial_response = sso_response
-             else:
-                 # Last resort
-                 initial_response = session.get(course_list_url)
+            print("[資訊] 偵測到尚未進入學習紀錄頁面 (Validation Failed)，嘗試第二次 SSO 跳轉...")
+            sso_response = session.get(sso_url)
+            if is_course_list_page(sso_response.text):
+                initial_response = sso_response
+            else:
+                # Last resort
+                initial_response = session.get(course_list_url)
 
     all_courses = []
     total_hours = 0.0
@@ -62,16 +62,13 @@ def get_enrolled_courses(session):
         if page == 1 and initial_response:
             print(f"檢查已報名: 使用 SSO 獲取的第 1 頁...")
             resp = initial_response
-            # Clear it so we don't reuse it if we somehow loop back to page 1 (unlikely but safe)
-            initial_response = None 
+            # Clear it so we don't reuse it
+            initial_response = None
         elif page == 1:
-             record_url = "https://ap1.elearning.taipei/elearn/courserecord/index.php"
-             print(f"檢查已報名: 讀取第 {page} 頁...")
-             resp = session.get(record_url)
-        else:
-            record_url = f"https://ap1.elearning.taipei/elearn/courserecord/index.php?page={page}"
+            record_url = course_list_url
             print(f"檢查已報名: 讀取第 {page} 頁...")
             resp = session.get(record_url)
+        # 對於 page > 1，resp 已在迴圈底部由 session.post 更新
 
         soup = BeautifulSoup(resp.text, "html.parser")
         table = soup.find("table", id="applySelection")
@@ -143,23 +140,53 @@ def get_enrolled_courses(session):
             print("  [停止] 本頁課程皆已重複，視為已達最後一頁。")
             break
 
-        # Force next page
+        # Prepare for next page
         page += 1
         if page > 50:
             print("  [停止] 超過 50 頁安全限制")
             break
 
-    return enrolled_ids, all_courses, total_hours
+        # 使用 POST 讀取後續頁面
+        payload = {
+            "page": str(page),
+            "perPage": "10"
+        }
+        # 嘗試從前一頁提取 sesskey
+        sesskey_match = re.search(r'name="sesskey" value="([^"]+)"', resp.text)
+        if sesskey_match:
+            payload["sesskey"] = sesskey_match.group(1)
+
+        print(f"檢查已報名: 讀取第 {page} 頁 (POST)...")
+        resp = session.post(course_list_url, data=payload)
+
+    return enrolled_ids, all_courses, total_hours, detected_base
 
 
-def enroll_course(session, course_id):
-    """Enroll in a course."""
-    enroll_url = f"https://ap1.elearning.taipei/elearn/course/view.php?id={course_id}&act=reg"
+def enroll_course(session, course_id, base_url="https://ap1.elearning.taipei"):
+    """Enroll in a course with session sync through so.php."""
+    # 1. 透過 so.php 同步 session 到 AP 網域
+    so_url = f"{base_url}/elearn/courseinfo/so.php?v={course_id}"
+    print(f"    [同步] 存取: {so_url}")
+    session.get(so_url, allow_redirects=True)
+
+    # 2. 執行實際報名動作
+    enroll_url = f"{base_url}/elearn/course/view.php?id={course_id}&act=reg"
+    print(f"    [報名] 存取: {enroll_url}")
     resp = session.get(enroll_url, allow_redirects=True)
-    return resp.status_code == 200
+
+    # 檢查是否報名成功 (檢查網址或內容)
+    if "regSucceed.php" in resp.url or "已報名成功" in resp.text:
+        return True
+    else:
+        # 有些課程可能有額外條件或已截止
+        if "已經報名過" in resp.text:
+            print(f"    [提醒] 此課程之前已報名過")
+            return True
+        print(f"    [失敗] 報名回應網址: {resp.url}")
+        return False
 
 
-def search_and_enroll(session, enrolled_ids, current_hours, target_hours=120):
+def search_and_enroll(session, enrolled_ids, current_hours, base_url, target_hours=120):
     """Search for courses with no quiz and enroll until target hours."""
     search_url = "https://elearning.taipei/mpage/view_type_list"
 
@@ -218,7 +245,7 @@ def search_and_enroll(session, enrolled_ids, current_hours, target_hours=120):
             hours = 0.0
             if hours_tag:
                 hours_match = re.search(
-                    r"(\d+)", hours_tag.get_text(strip=True))
+                    r"(\d+(?:\.\d+)?)", hours_tag.get_text(strip=True))
                 if hours_match:
                     hours = float(hours_match.group(1))
 
@@ -241,7 +268,7 @@ def search_and_enroll(session, enrolled_ids, current_hours, target_hours=120):
                     continue
 
                 print(f"  [報名] {course_name} ({hours}h, ID: {course_id})")
-                if enroll_course(session, course_id):
+                if enroll_course(session, course_id, base_url):
                     current_hours += hours
                     enrolled_ids.add(course_id)
                     time.sleep(1.5)
@@ -282,26 +309,36 @@ def main():
     })
 
     print("正在登入...")
-    if not load_cookies(session) or not is_session_valid(session):
-        print("Cookie 無效，重新登入...")
-        session = login_and_get_session(
-            config.get("USER_ID"), config.get("USER_PW"))
+    max_retries = 3
+    for attempt in range(max_retries):
+        if load_cookies(session) and is_session_valid(session):
+            print("使用已儲存的 Cookie")
+            break
+        else:
+            print(f"Cookie 無效或登入嘗試 {attempt + 1}/{max_retries}...")
+            session = login_and_get_session(
+                config.get("USER_ID"), config.get("USER_PW"))
+            if session and is_session_valid(session):
+                from get_course import save_cookies
+                save_cookies(session)
+                break
+            else:
+                print("登入失敗，準備重試...")
+                time.sleep(2)
     else:
-        print("使用已儲存的 Cookie")
-
-    if not session:
-        print("登入失敗！")
+        print("多次登入失敗，請檢查網路或帳號密碼！")
         return
 
     # Get current enrolled courses
     print("檢查目前已報名課程...")
-    enrolled_ids, courses_list, current_hours = get_enrolled_courses(session)
-
-
+    enrolled_ids, courses_list, current_hours, detected_base = get_enrolled_courses(
+        session)
 
     # 解析命令列參數
-    parser = argparse.ArgumentParser(description='Auto enroll courses to reach target hours.')
-    parser.add_argument('--target', type=float, default=120.0, help='Target hours to reach (default: 120)')
+    parser = argparse.ArgumentParser(
+        description='Auto enroll courses to reach target hours.')
+    parser.add_argument('--target', type=float, default=120.0,
+                        help='Target hours to reach (default: 120)')
     args = parser.parse_args()
     target_enrolled_hours = args.target
 
@@ -309,18 +346,19 @@ def main():
         print(f"✅ 已達到 {target_enrolled_hours} 小時目標！")
     else:
         need_hours = target_enrolled_hours - current_hours
-        print(f"⚠️  還需要再報名 {need_hours:.1f} 小時的課程 (目標: {target_enrolled_hours} 小時)")
+        print(
+            f"⚠️  還需要再報名 {need_hours:.1f} 小時的課程 (目標: {target_enrolled_hours} 小時)")
         print("開始自動報名課程（只報名認證時數 > 2 的課程）...\n")
 
         # Enroll in more courses
         final_hours = search_and_enroll(
-            session, enrolled_ids, current_hours, target_hours=target_enrolled_hours)
+            session, enrolled_ids, current_hours, detected_base, target_hours=target_enrolled_hours)
         print(f"\n報名完成！最終時數: {final_hours:.1f} 小時")
 
         # Refresh course list
         print("\n重新取得課程列表...")
         time.sleep(2)  # Wait for system to update
-        enrolled_ids, courses_list, current_hours = get_enrolled_courses(
+        enrolled_ids, courses_list, current_hours, detected_base = get_enrolled_courses(
             session)
 
     # Save to file
